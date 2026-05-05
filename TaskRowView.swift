@@ -76,10 +76,9 @@ struct TaskRowView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { startEditing() }
             Spacer(minLength: 0)
-            if hovered && !completing {
-                deleteButton
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
-            }
+            deleteButton
+                .opacity(hovered && !completing ? 1 : 0)
+                .animation(.easeInOut(duration: 0.12), value: hovered)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
