@@ -144,6 +144,13 @@ class TaskManager: ObservableObject {
         persistCategories()
     }
 
+    func renameCategory(_ id: UUID, name: String, color: String) {
+        guard let i = categories.firstIndex(where: { $0.id == id }) else { return }
+        categories[i].name  = name
+        categories[i].color = color
+        persistCategories()
+    }
+
     func assignCategory(_ categoryId: UUID?, to taskId: UUID) {
         mutate(taskId) { $0.categoryId = categoryId }
     }
@@ -177,11 +184,12 @@ class TaskManager: ObservableObject {
         }
     }
 
-    func update(_ id: UUID, title: String, note: String, dueDate: Date?) {
+    func update(_ id: UUID, title: String, note: String, dueDate: Date?, categoryId: UUID?) {
         mutate(id) {
-            $0.title   = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            $0.note    = note
-            $0.dueDate = dueDate
+            $0.title      = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            $0.note       = note
+            $0.dueDate    = dueDate
+            $0.categoryId = categoryId
         }
     }
 

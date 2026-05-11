@@ -15,9 +15,10 @@ struct TaskRowView: View {
     @State private var completing  = false   // true pendant la seconde d'animation
     @State private var showBurst   = false   // déclenche le burst de particules
 
-    // ── Note ───────────────────────────────────────────────────────────
-    @State private var showNote    = false   // commentaire déplié
-    @State private var editNote    = ""
+    // ── Note & catégorie ───────────────────────────────────────────────
+    @State private var showNote       = false
+    @State private var editNote       = ""
+    @State private var editCategoryId: UUID? = nil
 
     private var isVisuallyCompleted: Bool { task.isCompleted || completing }
 
@@ -152,6 +153,14 @@ struct TaskRowView: View {
                 Spacer().frame(width: 34)
                 QuickDatePicker(date: $editDueDate, hasDate: $editHasDue)
                 Spacer()
+            }
+            HStack(spacing: 0) {
+                Spacer().frame(width: 34)
+                CategoryPickerView(
+                    taskManager: taskManager,
+                    selectedCategoryId: $editCategoryId,
+                    allowCreation: false
+                )
             }
             HStack(spacing: 8) {
                 Spacer().frame(width: 34)
@@ -331,11 +340,12 @@ struct TaskRowView: View {
 
     private func startEditing() {
         guard !task.isCompleted && !completing else { return }
-        editTitle   = task.title
-        editNote    = task.note
-        editDueDate = task.dueDate ?? nearestHour()
-        editHasDue  = task.dueDate != nil
-        isEditing   = true
+        editTitle      = task.title
+        editNote       = task.note
+        editCategoryId = task.categoryId
+        editDueDate    = task.dueDate ?? nearestHour()
+        editHasDue     = task.dueDate != nil
+        isEditing      = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             editFocused = true
         }
@@ -344,7 +354,7 @@ struct TaskRowView: View {
     private func saveEdit() {
         let trimmed = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { cancelEdit(); return }
-        taskManager.update(task.id, title: trimmed, note: editNote, dueDate: editHasDue ? editDueDate : nil)
+        taskManager.update(task.id, title: trimmed, note: editNote, dueDate: editHasDue ? editDueDate : nil, categoryId: editCategoryId)
         isEditing = false
     }
 

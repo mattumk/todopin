@@ -13,25 +13,59 @@ struct FloatingCircleView: View {
     var isVeryOverdue: Bool { taskManager.hasVeryOverdueTasks }
     var isNowDue:      Bool { taskManager.hasNowDueTasks }
 
+    // ── Couleur active du pin ──────────────────────────────────────────
+    private var activePinColor: Color? {
+        guard let hex = pinSettings.pinColor else { return nil }
+        return Color(hex: hex)
+    }
+
+    /// Couleur du texte calculée selon la luminance du fond
+    private var badgeTextColor: Color {
+        // Pas de couleur personnalisée → comportement normal
+        guard let hex = pinSettings.pinColor else {
+            return isVeryOverdue ? .orange : .primary
+        }
+        // Luminance perceptuelle (W3C)
+        let h = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: h).scanHexInt64(&int)
+        let r = Double((int >> 16) & 0xFF) / 255.0
+        let g = Double((int >>  8) & 0xFF) / 255.0
+        let b = Double( int        & 0xFF) / 255.0
+        let lum = 0.299 * r + 0.587 * g + 0.114 * b
+        return lum > 0.60 ? .black : .white
+    }
+
+    /// Couleur des ondes : pin color en priorité, sinon logique overdue
+    private var waveColor: Color {
+        if isVeryOverdue { return .orange }
+        if isNowDue      { return .accentColor }
+        return activePinColor ?? Color.primary.opacity(0.4)
+    }
+
     var body: some View {
         ZStack {
             // — Ondes —
             if isVeryOverdue {
-                PulseRing(color: .orange,      delay: 0.0, duration: 1.0, scale: pinSettings.pulseScale)
-                PulseRing(color: .orange,      delay: 0.5, duration: 1.0, scale: pinSettings.pulseScale)
+                PulseRing(color: waveColor, delay: 0.0, duration: 1.0, scale: pinSettings.pulseScale)
+                PulseRing(color: waveColor, delay: 0.5, duration: 1.0, scale: pinSettings.pulseScale)
             } else if isNowDue {
-                PulseRing(color: .accentColor, delay: 0.0, duration: 1.8, scale: pinSettings.pulseScale)
-                PulseRing(color: .accentColor, delay: 0.9, duration: 1.8, scale: pinSettings.pulseScale)
+                PulseRing(color: waveColor, delay: 0.0, duration: 1.8, scale: pinSettings.pulseScale)
+                PulseRing(color: waveColor, delay: 0.9, duration: 1.8, scale: pinSettings.pulseScale)
+            } else if activePinColor != nil {
+                // Ondes douces à la couleur du pin en mode idle
+                PulseRing(color: waveColor, delay: 0.0, duration: 2.4, scale: pinSettings.pulseScale * 0.75)
             }
 
             // — Cercle —
             Circle()
-                .fill(.ultraThinMaterial)
+                .fill(activePinColor.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.ultraThinMaterial))
                 .frame(width: 56, height: 56)
                 .overlay(
                     Circle().strokeBorder(
-                        isVeryOverdue ? Color.orange.opacity(0.9)
-                            : isNowDue ? Color.accentColor.opacity(0.85)
+                        isVeryOverdue    ? Color.orange.opacity(0.9)
+                            : isNowDue   ? Color.accentColor.opacity(0.85)
+                            : activePinColor != nil ? Color.white.opacity(0.20)
                             : Color.primary.opacity(0.18),
                         lineWidth: 1.5
                     )
@@ -45,19 +79,18 @@ struct FloatingCircleView: View {
                 if hasPending {
                     Text(count > 99 ? "99+" : "\(count)")
                         .font(.system(size: count > 9 ? 16 : 22, weight: .semibold, design: .rounded))
-                        .foregroundColor(isVeryOverdue ? .orange : .primary)
+                        .foregroundColor(badgeTextColor)
                         .contentTransition(.numericText())
                 } else {
                     Image(systemName: "checkmark")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(activePinColor != nil ? badgeTextColor : .secondary)
                 }
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pinSettings.pinColor)
         }
         .frame(width: 128, height: 128)
-        // Le tap et le drag sont gérés par FloatingPanelContent (AppKit)
-        // .onHover reste en SwiftUI : il utilise NSTrackingArea, indépendant de mouseDown
         .onHover { hovering in
             if hovering { onHoverStart() } else { onHoverEnd() }
         }

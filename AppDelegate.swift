@@ -102,17 +102,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 160),
-            styleMask:   [.titled, .closable],
-            backing:     .buffered,
-            defer:       false
-        )
+        let controller = NSHostingController(rootView: PinSettingsView())
+        let win = NSWindow(contentViewController: controller)
         win.title = "Paramètres"
+        win.styleMask = [.titled, .closable]
         win.level = .floating
         win.isReleasedWhenClosed = false
+        win.setContentSize(NSSize(width: 300, height: 320))
         win.center()
-        win.contentView = NSHostingView(rootView: PinSettingsView())
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow = win
