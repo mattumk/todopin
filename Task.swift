@@ -9,4 +9,5 @@ struct Task: Codable, Identifiable, Equatable {
     var completedDate: Date? = nil    // date de complétion (nil = pas encore faite)
     var dueDate:       Date? = nil    // échéance optionnelle
     var order:         Int   = 0      // ordre manuel (drag-to-reorder)
+    var categoryId:    UUID? = nil    // catégorie optionnelle
 }

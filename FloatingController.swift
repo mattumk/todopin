@@ -187,6 +187,17 @@ class FloatingController: NSObject {
         UserDefaults.standard.set(["x": origin.x, "y": origin.y], forKey: positionKey)
     }
 
+    func recenterPin() {
+        guard let panel = panel else { return }
+        let screen = NSScreen.main ?? NSScreen.screens[0]
+        let origin = CGPoint(
+            x: screen.visibleFrame.midX - panel.frame.width  / 2,
+            y: screen.visibleFrame.midY - panel.frame.height / 2
+        )
+        panel.setFrameOrigin(origin)
+        savePosition(origin)
+    }
+
     private func savedMainWindowPosition() -> CGPoint? {
         guard let d = UserDefaults.standard.dictionary(forKey: mainPositionKey),
               let x = d["x"] as? Double, let y = d["y"] as? Double else { return nil }

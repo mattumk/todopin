@@ -15,6 +15,10 @@ struct TaskRowView: View {
     @State private var completing  = false   // true pendant la seconde d'animation
     @State private var showBurst   = false   // déclenche le burst de particules
 
+    // ── Note ───────────────────────────────────────────────────────────
+    @State private var showNote    = false   // commentaire déplié
+    @State private var editNote    = ""
+
     private var isVisuallyCompleted: Bool { task.isCompleted || completing }
 
     /// Tâche créée aujourd'hui dont l'heure est passée → badge rouge
@@ -61,6 +65,16 @@ struct TaskRowView: View {
                     y: hovered ? 3 : 1
                 )
         )
+        // ── Barre de tag colorée à gauche ─────────────────────────────
+        .overlay(alignment: .leading) {
+            if let cat = taskManager.category(for: task) {
+                Capsule()
+                    .fill(cat.swiftUIColor)
+                    .frame(width: 3)
+                    .padding(.vertical, 8)
+                    .padding(.leading, 5)
+            }
+        }
         .onHover { v in if !isEditing && !completing { hovered = v } }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isEditing)
         .animation(.easeInOut(duration: 0.12), value: hovered)
@@ -70,18 +84,47 @@ struct TaskRowView: View {
     // MARK: - Normal row
 
     private var normalRow: some View {
-        HStack(spacing: 12) {
-            checkButton
-            label
-                .contentShape(Rectangle())
-                .onTapGesture { startEditing() }
-            Spacer(minLength: 0)
-            deleteButton
-                .opacity(hovered && !completing ? 1 : 0)
-                .animation(.easeInOut(duration: 0.12), value: hovered)
+        VStack(alignment: .leading, spacing: 0) {
+            // ── Ligne principale ────────────────────────────────────────
+            HStack(spacing: 12) {
+                checkButton
+                label
+                Spacer(minLength: 0)
+                // Crayon (modifier)
+                editButton
+                    .opacity(hovered && !completing ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.12), value: hovered)
+                // Croix (supprimer)
+                deleteButton
+                    .opacity(hovered && !completing ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.12), value: hovered)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 11)
+            .padding(.bottom, showNote && !task.note.isEmpty ? 5 : 11)
+
+            // ── Commentaire déplié ──────────────────────────────────────
+            if showNote && !task.note.isEmpty {
+                Text(task.note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(AnyShapeStyle(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 48)   // aligné avec le titre (22 checkbox + 12 gap + 14 padding)
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 11)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Clic n'importe où sur la brique → déplie le commentaire s'il y en a un
+            guard !task.note.isEmpty, !isEditing, !completing else { return }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                showNote.toggle()
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: showNote)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isVisuallyCompleted)
     }
 
@@ -93,11 +136,17 @@ struct TaskRowView: View {
                 Circle()
                     .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1.5)
                     .frame(width: 22, height: 22)
-                TextField("Titre de la tâche", text: $editTitle)
-                    .font(.system(size: 14))
-                    .textFieldStyle(.plain)
-                    .focused($editFocused)
-                    .onSubmit { saveEdit() }
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Titre de la tâche", text: $editTitle)
+                        .font(.system(size: 14))
+                        .textFieldStyle(.plain)
+                        .focused($editFocused)
+                        .onSubmit { saveEdit() }
+                    TextField("Commentaire…", text: $editNote)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .textFieldStyle(.plain)
+                }
             }
             HStack(spacing: 0) {
                 Spacer().frame(width: 34)
@@ -192,23 +241,48 @@ struct TaskRowView: View {
 
     private var label: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(task.title)
-                .font(.system(size: 14))
-                .foregroundStyle(isVisuallyCompleted ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                .strikethrough(isVisuallyCompleted, color: .secondary.opacity(0.55))
-                .lineLimit(2)
-
-            if !task.note.isEmpty {
-                Text(task.note)
-                    .font(.system(size: 12))
-                    .foregroundStyle(AnyShapeStyle(.secondary))
-                    .lineLimit(1)
+            HStack(spacing: 6) {
+                Text(task.title)
+                    .font(.system(size: 14))
+                    .foregroundStyle(isVisuallyCompleted ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .strikethrough(isVisuallyCompleted, color: .secondary.opacity(0.55))
+                    .lineLimit(2)
+                // Petite icône indiquant qu'il y a un commentaire
+                if !task.note.isEmpty && !isVisuallyCompleted {
+                    Image(systemName: showNote ? "bubble.left.fill" : "bubble.left")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.5))
+                }
             }
 
-            if let due = task.dueDate, !isVisuallyCompleted {
-                dueBadge(due)
+            // ── Badges en ligne (tag + échéance) ──────────────────────
+            let cat = taskManager.category(for: task)
+            let hasBadges = cat != nil || (task.dueDate != nil && !isVisuallyCompleted)
+            if hasBadges {
+                HStack(spacing: 5) {
+                    if let cat = cat, !isVisuallyCompleted {
+                        tagBadge(cat)
+                    }
+                    if let due = task.dueDate, !isVisuallyCompleted {
+                        dueBadge(due)
+                    }
+                }
             }
         }
+    }
+
+    private func tagBadge(_ cat: TaskCategory) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(cat.swiftUIColor)
+                .frame(width: 5, height: 5)
+            Text(cat.name)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(cat.swiftUIColor)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(cat.swiftUIColor.opacity(0.12)))
     }
 
     private func dueBadge(_ due: Date) -> some View {
@@ -229,6 +303,18 @@ struct TaskRowView: View {
         )
     }
 
+    // MARK: - Edit button (crayon)
+
+    private var editButton: some View {
+        Image(systemName: "pencil")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 22, height: 22)
+            .background(Circle().fill(Color.secondary.opacity(0.10)))
+            .contentShape(Circle())
+            .onTapGesture { startEditing() }
+    }
+
     // MARK: - Delete
 
     private var deleteButton: some View {
@@ -246,6 +332,7 @@ struct TaskRowView: View {
     private func startEditing() {
         guard !task.isCompleted && !completing else { return }
         editTitle   = task.title
+        editNote    = task.note
         editDueDate = task.dueDate ?? nearestHour()
         editHasDue  = task.dueDate != nil
         isEditing   = true
@@ -257,7 +344,7 @@ struct TaskRowView: View {
     private func saveEdit() {
         let trimmed = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { cancelEdit(); return }
-        taskManager.update(task.id, title: trimmed, dueDate: editHasDue ? editDueDate : nil)
+        taskManager.update(task.id, title: trimmed, note: editNote, dueDate: editHasDue ? editDueDate : nil)
         isEditing = false
     }
 

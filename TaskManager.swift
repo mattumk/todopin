@@ -4,13 +4,16 @@ import Combine
 class TaskManager: ObservableObject {
     static let shared = TaskManager()
 
-    @Published private(set) var tasks: [Task] = []
+    @Published private(set) var tasks:      [Task]         = []
+    @Published private(set) var categories: [TaskCategory] = []
 
-    private let storageKey = "com.todopin.tasks"
+    private let storageKey    = "com.todopin.tasks"
+    private let categoriesKey = "com.todopin.categories"
     private var timer: Timer?
 
     private init() {
         load()
+        loadCategories()
         // Réévalue les échéances chaque minute (badge, pulsation)
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.objectWillChange.send()
@@ -44,6 +47,36 @@ class TaskManager: ObservableObject {
     }
 
     var pendingCount: Int { todayPending.count }
+
+    /// Catégories qui ont au moins une tâche pending aujourd'hui, triées par ordre manuel
+    var activeCategories: [TaskCategory] {
+        let usedIds = Set(todayPending.compactMap { $0.categoryId })
+        return categories
+            .filter { usedIds.contains($0.id) }
+            .sorted { $0.order < $1.order }
+    }
+
+    func reorderCategories(ids: [UUID]) {
+        for (index, id) in ids.enumerated() {
+            if let i = categories.firstIndex(where: { $0.id == id }) {
+                categories[i].order = index
+            }
+        }
+        persistCategories()
+    }
+
+    func pendingTasks(for category: TaskCategory) -> [Task] {
+        todayPending.filter { $0.categoryId == category.id }
+    }
+
+    var uncategorizedPending: [Task] {
+        todayPending.filter { $0.categoryId == nil }
+    }
+
+    func category(for task: Task) -> TaskCategory? {
+        guard let id = task.categoryId else { return nil }
+        return categories.first { $0.id == id }
+    }
 
     /// Tâches d'aujourd'hui dont le dueDate est avant minuit → pulsation orange
     /// (inclut les tâches reportées depuis hier)
@@ -81,14 +114,38 @@ class TaskManager: ObservableObject {
 
     // MARK: - Actions
 
-    func add(title: String, note: String = "", dueDate: Date? = nil) {
+    func add(title: String, note: String = "", dueDate: Date? = nil, categoryId: UUID? = nil) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let nextOrder = (tasks.map { $0.order }.max() ?? -1) + 1
         var task = Task(title: trimmed, note: note, dueDate: dueDate)
-        task.order = nextOrder
+        task.order      = nextOrder
+        task.categoryId = categoryId
         tasks.append(task)
         persist()
+    }
+
+    // MARK: - Catégories
+
+    @discardableResult
+    func addCategory(name: String, color: String) -> TaskCategory {
+        let cat = TaskCategory(name: name, color: color)
+        categories.append(cat)
+        persistCategories()
+        return cat
+    }
+
+    func deleteCategory(_ category: TaskCategory) {
+        for i in tasks.indices where tasks[i].categoryId == category.id {
+            tasks[i].categoryId = nil
+        }
+        categories.removeAll { $0.id == category.id }
+        persist()
+        persistCategories()
+    }
+
+    func assignCategory(_ categoryId: UUID?, to taskId: UUID) {
+        mutate(taskId) { $0.categoryId = categoryId }
     }
 
     /// Réordonne les tâches pending suite à un drag-to-reorder (List onMove)
@@ -120,9 +177,10 @@ class TaskManager: ObservableObject {
         }
     }
 
-    func update(_ id: UUID, title: String, dueDate: Date?) {
+    func update(_ id: UUID, title: String, note: String, dueDate: Date?) {
         mutate(id) {
             $0.title   = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            $0.note    = note
             $0.dueDate = dueDate
         }
     }
@@ -189,5 +247,18 @@ class TaskManager: ObservableObject {
             let decoded = try? JSONDecoder().decode([Task].self, from: data)
         else { return }
         tasks = decoded
+    }
+
+    private func persistCategories() {
+        guard let data = try? JSONEncoder().encode(categories) else { return }
+        UserDefaults.standard.set(data, forKey: categoriesKey)
+    }
+
+    private func loadCategories() {
+        guard
+            let data = UserDefaults.standard.data(forKey: categoriesKey),
+            let decoded = try? JSONDecoder().decode([TaskCategory].self, from: data)
+        else { return }
+        categories = decoded
     }
 }

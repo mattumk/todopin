@@ -2,7 +2,8 @@ import SwiftUI
 
 struct FloatingCircleView: View {
     @ObservedObject var taskManager: TaskManager
-    @ObservedObject var pinState:    FloatingPinState   // piloté par FloatingPanelContent
+    @ObservedObject var pinState:    FloatingPinState
+    @ObservedObject private var pinSettings = PinSettings.shared
 
     var onHoverStart: () -> Void
     var onHoverEnd:   () -> Void
@@ -16,11 +17,11 @@ struct FloatingCircleView: View {
         ZStack {
             // — Ondes —
             if isVeryOverdue {
-                PulseRing(color: .orange,      delay: 0.0,  duration: 1.0)
-                PulseRing(color: .orange,      delay: 0.5,  duration: 1.0)
+                PulseRing(color: .orange,      delay: 0.0, duration: 1.0, scale: pinSettings.pulseScale)
+                PulseRing(color: .orange,      delay: 0.5, duration: 1.0, scale: pinSettings.pulseScale)
             } else if isNowDue {
-                PulseRing(color: .accentColor, delay: 0.0,  duration: 1.8)
-                PulseRing(color: .accentColor, delay: 0.9,  duration: 1.8)
+                PulseRing(color: .accentColor, delay: 0.0, duration: 1.8, scale: pinSettings.pulseScale)
+                PulseRing(color: .accentColor, delay: 0.9, duration: 1.8, scale: pinSettings.pulseScale)
             }
 
             // — Cercle —
@@ -69,13 +70,14 @@ struct PulseRing: View {
     let color:    Color
     let delay:    Double
     let duration: Double
+    var scale:    Double = 2.1
     @State private var animating = false
 
     var body: some View {
         Circle()
             .strokeBorder(color.opacity(animating ? 0 : 0.5), lineWidth: 1.5)
             .frame(width: 56, height: 56)
-            .scaleEffect(animating ? 2.1 : 1.0)
+            .scaleEffect(animating ? scale : 1.0)
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     withAnimation(.easeOut(duration: duration).repeatForever(autoreverses: false)) {

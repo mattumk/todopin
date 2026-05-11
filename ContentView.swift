@@ -4,15 +4,25 @@ import AppKit
 struct ContentView: View {
     @ObservedObject var taskManager: TaskManager
 
-    @State private var newTitle      = ""
-    @State private var selectedDue   = Date()
-    @State private var hasDue        = false
-    @State private var showCompleted = false
+    @State private var newTitle            = ""
+    @State private var newNote             = ""
+    @State private var selectedDue         = Date()
+    @State private var hasDue              = false
+    @State private var showCompleted       = false
+    @State private var selectedCategoryId: UUID? = nil
+    @State private var addFieldExpanded    = false
+    @State private var filterCategoryId:   UUID? = nil
+    @State private var showTagFilter       = false
     @FocusState private var inputFocused: Bool
 
     private var pending:  [Task] { taskManager.todayPending }
     private var completed:[Task] { taskManager.todayCompleted }
     private var allToday: [Task] { taskManager.todayTasks }
+
+    private var filteredPending: [Task] {
+        guard let catId = filterCategoryId else { return pending }
+        return pending.filter { $0.categoryId == catId }
+    }
 
     var body: some View {
         ZStack {
@@ -21,7 +31,11 @@ struct ContentView: View {
                 addField
                 taskList
             }
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(
+                Color(NSColor.windowBackgroundColor)
+                    .contentShape(Rectangle())
+                    .onTapGesture { dismissAddField() }
+            )
 
             // ── Raccourcis clavier invisibles ──────────────────────────────
             Button("") { NSApp.keyWindow?.orderOut(nil) }
@@ -47,6 +61,35 @@ struct ContentView: View {
                     .font(.system(size: 26, weight: .bold))
             }
             Spacer()
+            // ── Filtre par tag ────────────────────────────────────────
+            Button {
+                showTagFilter.toggle()
+            } label: {
+                Image(systemName: filterCategoryId != nil ? "tag.fill" : "tag")
+                    .font(.system(size: 13))
+                    .foregroundColor(filterCategoryId != nil ? UmakeTheme.orange : .secondary)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Filtrer par tag")
+            .popover(isPresented: $showTagFilter, arrowEdge: .bottom) {
+                TagFilterPopover(taskManager: taskManager, filterCategoryId: $filterCategoryId)
+            }
+
+            // ── Engrenage paramètres ──────────────────────────────────
+            Button {
+                (NSApp.delegate as? AppDelegate)?.openSettings()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Paramètres")
+
             progressRing
         }
         .padding(.horizontal, 26)
@@ -101,15 +144,47 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 13)
-            .padding(.bottom, 8)
+            .padding(.bottom, addFieldExpanded ? 4 : 13)
+            .onChange(of: inputFocused) { focused in
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                    addFieldExpanded = focused || !newTitle.isEmpty
+                }
+            }
+            .onChange(of: newTitle) { text in
+                if !addFieldExpanded && !text.isEmpty {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                        addFieldExpanded = true
+                    }
+                }
+            }
 
-            // ── Quick date picker (toujours visible) ──────────────────────
-            Divider()
-                .background(UmakeTheme.navy.opacity(0.08))
-                .padding(.horizontal, 14)
-            QuickDatePicker(date: $selectedDue, hasDate: $hasDue)
+            // ── Commentaire + options (visibles uniquement quand le champ est actif) ──
+            if addFieldExpanded {
+                // Champ commentaire
+                HStack(spacing: 10) {
+                    Spacer().frame(width: 29)   // aligne avec le texte du titre
+                    TextField("Ajouter un commentaire…", text: $newNote)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .textFieldStyle(.plain)
+                        .onSubmit { submit() }
+                }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.bottom, 8)
+                Divider()
+                    .background(UmakeTheme.navy.opacity(0.08))
+                    .padding(.horizontal, 14)
+                QuickDatePicker(date: $selectedDue, hasDate: $hasDue)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+
+                Divider()
+                    .background(UmakeTheme.navy.opacity(0.08))
+                    .padding(.horizontal, 14)
+                CategoryPickerView(taskManager: taskManager, selectedCategoryId: $selectedCategoryId)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+            }
         }
         .background(RoundedRectangle(cornerRadius: 12).fill(UmakeTheme.navy.opacity(0.05)))
         .overlay(
@@ -122,21 +197,40 @@ struct ContentView: View {
 
     // MARK: - Task list
 
+    /// Retire le focus du champ de saisie (ferme les options d'ajout)
+    private func dismissAddField() {
+        inputFocused = false
+        NSApp.keyWindow?.makeFirstResponder(nil)
+    }
+
     private var taskList: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            if pending.isEmpty && completed.isEmpty {
-                emptyState
-                    .padding(.top, 8)
+            let tasks = filteredPending
+            if tasks.isEmpty && completed.isEmpty {
+                emptyState.padding(.top, 8)
             } else {
                 VStack(spacing: 0) {
-                    // ── Tâches en attente — drag-to-reorder fluide ──────────
-                    ReorderableTaskList(taskManager: taskManager, tasks: pending)
-
-                    // ── Section tâches traitées ─────────────────────────────
-                    if !completed.isEmpty {
-                        completedHeader
+                    // ── Tâches pending ──────────────────────────────────────
+                    if !tasks.isEmpty {
+                        if filterCategoryId != nil {
+                            // Filtre actif : liste simple (pas de reorder, ça n'a pas de sens sur un sous-ensemble)
+                            VStack(spacing: 6) {
+                                ForEach(tasks) { task in
+                                    TaskRowView(task: task, taskManager: taskManager)
+                                }
+                            }
                             .padding(.horizontal, 20)
+                            .padding(.vertical, 4)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: tasks.map(\.id))
+                        } else {
+                            // Pas de filtre : liste reorderable
+                            ReorderableTaskList(taskManager: taskManager, tasks: pending)
+                        }
+                    }
 
+                    // ── Tâches traitées ─────────────────────────────────────
+                    if !completed.isEmpty {
+                        completedHeader.padding(.horizontal, 20)
                         if showCompleted {
                             VStack(spacing: 6) {
                                 ForEach(completed) { task in
@@ -154,6 +248,7 @@ struct ContentView: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: pending.map(\.id))
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: completed.map(\.id))
+        .simultaneousGesture(TapGesture().onEnded { dismissAddField() })
     }
 
     private var emptyState: some View {
@@ -197,8 +292,11 @@ struct ContentView: View {
     // MARK: - Helpers
 
     private func submit() {
-        taskManager.add(title: newTitle, dueDate: hasDue ? selectedDue : nil)
-        newTitle = ""; hasDue = false
+        taskManager.add(title: newTitle,
+                        note: newNote,
+                        dueDate: hasDue ? selectedDue : nil,
+                        categoryId: selectedCategoryId)
+        newTitle = ""; newNote = ""; hasDue = false; selectedCategoryId = nil
         inputFocused = true
     }
 
@@ -228,6 +326,95 @@ struct ContentView: View {
         case 14..<18: return "sun.max"
         case 18..<22: return "moon.stars"
         default:      return "zzz"
+        }
+    }
+}
+
+// MARK: - Popover filtre par tag
+
+private struct TagFilterPopover: View {
+    @ObservedObject var taskManager: TaskManager
+    @Binding var filterCategoryId: UUID?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Titre
+            Text("Filtrer par tag")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+                .padding(.bottom, 10)
+
+            // "Tous" — remet à zéro le filtre
+            filterRow(
+                color: .secondary,
+                name: "Tous les tags",
+                isSelected: filterCategoryId == nil,
+                icon: "tag"
+            ) {
+                filterCategoryId = nil
+            }
+
+            if !taskManager.categories.isEmpty {
+                Divider().padding(.vertical, 6)
+
+                ForEach(taskManager.categories) { cat in
+                    filterRow(
+                        color: cat.swiftUIColor,
+                        name: cat.name,
+                        isSelected: filterCategoryId == cat.id,
+                        icon: nil
+                    ) {
+                        filterCategoryId = filterCategoryId == cat.id ? nil : cat.id
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(minWidth: 190)
+    }
+
+    private func filterRow(
+        color: Color,
+        name: String,
+        isSelected: Bool,
+        icon: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            if let icon = icon {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .foregroundColor(isSelected ? .white : .secondary)
+                    .frame(width: 14)
+            } else {
+                Circle()
+                    .fill(color)
+                    .frame(width: 8, height: 8)
+                    .frame(width: 14)
+            }
+            Text(name)
+                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+            Spacer()
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(isSelected && icon != nil ? .white : color)
+            }
+        }
+        .foregroundColor(isSelected ? (icon != nil ? .white : color) : .primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(isSelected ? (icon != nil ? UmakeTheme.navy : color.opacity(0.12)) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                action()
+            }
         }
     }
 }

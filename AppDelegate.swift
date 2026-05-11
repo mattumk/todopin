@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
 
@@ -45,6 +46,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
+        let settingsItem = NSMenuItem(
+            title: "Paramètres…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+
+        appMenu.addItem(.separator())
+
         let updateItem = NSMenuItem(
             title: "Vérifier les mises à jour…",
             action: #selector(checkForUpdates),
@@ -79,6 +90,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func checkForUpdates() {
         UpdateChecker.shared.checkManually()
+    }
+
+    // MARK: - Settings
+
+    private var settingsWindow: NSWindow?
+
+    @objc func openSettings() {
+        if let win = settingsWindow, win.isVisible {
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let win = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 160),
+            styleMask:   [.titled, .closable],
+            backing:     .buffered,
+            defer:       false
+        )
+        win.title = "Paramètres"
+        win.level = .floating
+        win.isReleasedWhenClosed = false
+        win.center()
+        win.contentView = NSHostingView(rootView: PinSettingsView())
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow = win
+    }
+
+    // MARK: - Recentrer le PIN (Dock menu)
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let item = NSMenuItem(
+            title:  "Recentrer le PIN",
+            action: #selector(recenterPin),
+            keyEquivalent: ""
+        )
+        item.target = self
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func recenterPin() {
+        floatingController?.recenterPin()
     }
 
     /// Reporter manuellement depuis le menu (disponible tant qu'il y a des tâches d'hier)
