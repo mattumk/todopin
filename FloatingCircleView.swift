@@ -52,9 +52,6 @@ struct FloatingCircleView: View {
             } else if isNowDue {
                 PulseRing(color: waveColor, delay: 0.0, duration: 1.8, scale: pinSettings.pulseScale)
                 PulseRing(color: waveColor, delay: 0.9, duration: 1.8, scale: pinSettings.pulseScale)
-            } else if activePinColor != nil {
-                // Ondes douces à la couleur du pin en mode idle
-                PulseRing(color: waveColor, delay: 0.0, duration: 2.4, scale: pinSettings.pulseScale * 0.75)
             }
 
             // — Cercle —
